@@ -2,6 +2,10 @@ from airflow.decorators import dag, task
 from airflow.utils.dates import days_ago
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 import logging
+import numpy as np
+import pandas as pd
+
+CARS_PER_REFILL=5
 
 @dag(
     dag_id="refill_cars",
@@ -30,11 +34,16 @@ def refill_cars():
 
   @task
   def extract_random_cars():
-    return ['abobabebebe']
+    df = pd.read_csv('assets/cars.csv', sep=';')
+
+    rand = df.sample(CARS_PER_REFILL).copy()
+    rand['price_usd'] = np.random.randint(10_000, 50_000, size=rand.shape[0])
+
+    return rand
 
   @task
   def transform_cars(cars):
-    return []
+    return cars
 
   @task
   def load_cars(cars):
