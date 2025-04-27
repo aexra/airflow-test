@@ -11,7 +11,7 @@ DEFAULT_ARGS = {
 with DAG(
   dag_id="test1",
   description="my first dag",
-  tags=["kaka"],
+  tags=["test"],
   schedule_interval='@daily',
   start_date=days_ago(2),
   default_args=DEFAULT_ARGS,
