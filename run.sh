@@ -1,1 +1,1 @@
-docker compose --profile flower up
+docker compose --profile flower up --remove-orphans
