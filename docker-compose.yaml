@@ -132,6 +132,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+      airflow-init-connections:
+        condition: service_completed_successfully
 
   airflow-scheduler:
     <<: *airflow-common
@@ -146,6 +148,8 @@ services:
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
+        condition: service_completed_successfully
+      airflow-init-connections:
         condition: service_completed_successfully
 
   airflow-worker:
@@ -170,6 +174,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+      airflow-init-connections:
+        condition: service_completed_successfully
 
   airflow-triggerer:
     <<: *airflow-common
@@ -184,6 +190,8 @@ services:
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
+        condition: service_completed_successfully
+      airflow-init-connections:
         condition: service_completed_successfully
 
   airflow-init:
@@ -263,6 +271,53 @@ services:
       - -c
       - airflow
 
+  airflow-init-connections:
+    <<: *airflow-common  # Используем общие настройки
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for PostgreSQL to be ready..."
+        until pg_isready -h postgres -p 5432 -U airflow; do
+          sleep 5
+        done
+        
+        echo "Initializing Airflow connections..."
+
+        if ! airflow connections get postgres_conn; then
+          airflow connections add 'postgres_conn' \
+            --conn-type 'postgres' \
+            --conn-host 'db' \
+            --conn-login 'admin' \
+            --conn-password 'admin' \
+            --conn-port '5432' \
+            --conn-schema 'db' \
+            --conn-description 'Postgres actual database'
+        fi
+        
+        if ! airflow connections get minio_conn; then
+          airflow connections add 'minio_conn' \
+            --conn-type 'aws' \
+            --conn-login 'minioadmin' \
+            --conn-password 'minioadmin' \
+            --conn-extra "${_AIRFLOW_CONN__MINIO_EXTRA}" \
+            --conn-description 'S3/MinIO'
+        fi
+        
+        echo "Connection setup completed!"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_CONN__MINIO_EXTRA: >-
+        {
+          "endpoint_url": "http://minio:9000",
+          "aws_access_key_id": "minioadmin",
+          "aws_secret_access_key": "minioadmin"
+        }
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
   # You can enable flower by adding "--profile flower" option e.g. docker-compose --profile flower up
   # or by explicitly targeted on the command line e.g. docker-compose up flower.
   # See: https://docs.docker.com/compose/profiles/
@@ -304,7 +359,7 @@ services:
       start_period: 5s
     restart: always
 
-  minio-airflow-test:
+  minio:
     image: minio/minio
     environment:
       MINIO_ROOT_USER: minioadmin

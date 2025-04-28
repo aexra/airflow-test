@@ -35,14 +35,12 @@ def refill_cars():
   @task
   def extract_random_cars():
     df = pd.read_csv('assets/cars.csv', sep=';')
-
     rand = df.sample(CARS_PER_REFILL).copy()
-    rand['price_usd'] = np.random.randint(10_000, 50_000, size=rand.shape[0])
-
     return rand
 
   @task
   def transform_cars(cars):
+    cars['price_usd'] = np.random.randint(10_000, 50_000, size=cars.shape[0])
     return cars
 
   @task
