@@ -311,12 +311,6 @@ services:
         echo "Connection setup completed!"
     environment:
       <<: *airflow-common-env
-      _AIRFLOW_CONN__MINIO_EXTRA: >-
-        {
-          "endpoint_url": "http://minio:9000",
-          "aws_access_key_id": "minioadmin",
-          "aws_secret_access_key": "minioadmin"
-        }
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
