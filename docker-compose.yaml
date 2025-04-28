@@ -132,8 +132,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-      airflow-init-connections:
-        condition: service_completed_successfully
+      # airflow-init-connections:
+      #   condition: service_completed_successfully
 
   airflow-scheduler:
     <<: *airflow-common
@@ -300,7 +300,11 @@ services:
             --conn-type 'aws' \
             --conn-login 'minioadmin' \
             --conn-password 'minioadmin' \
-            --conn-extra "${_AIRFLOW_CONN__MINIO_EXTRA}" \
+            --conn-extra '{
+                "endpoint_url": "http://minio:9000",
+                "aws_access_key_id": "minioadmin",
+                "aws_secret_access_key": "minioadmin"
+            }' \
             --conn-description 'S3/MinIO'
         fi
         
@@ -317,6 +321,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+      airflow-webserver:
+        condition: service_healthy
 
   # You can enable flower by adding "--profile flower" option e.g. docker-compose --profile flower up
   # or by explicitly targeted on the command line e.g. docker-compose up flower.
