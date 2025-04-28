@@ -5,6 +5,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 import logging
 import numpy as np
 import pandas as pd
+import time
 
 CARS_PER_REFILL=10
 
@@ -36,7 +37,7 @@ def refill_cars():
   @task
   def extract_random_cars():
     df = pd.read_csv('assets/cars.csv', sep=';')
-    rand = df.sample(CARS_PER_REFILL).copy()
+    rand = df.sample(CARS_PER_REFILL, random_state=int(time.time())).copy()
     return rand
 
   @task
