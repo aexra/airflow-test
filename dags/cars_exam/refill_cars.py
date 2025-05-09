@@ -60,6 +60,8 @@ def refill_cars():
 
   @task
   def transform_cars(cars, codes):
+    np.random.seed(int(time.time()))
+    
     cars['price'] = np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE, size=cars.shape[0])
     cars['currency'] = np.random.choice(codes, size=cars.shape[0])
     
@@ -78,7 +80,7 @@ def refill_cars():
       {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
       """
       
-      print("Executing query:", query)
+      logging.info(f"Executing query: {query}")
       
       cur.execute(query)
       conn.commit()

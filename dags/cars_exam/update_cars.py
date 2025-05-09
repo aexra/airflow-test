@@ -45,6 +45,8 @@ def update_cars():
 
   @task
   def transform_cars(cars, codes):
+    np.random.seed(int(time.time()))
+    
     cars['price'] = np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE, size=cars.shape[0])
     cars['currency'] = np.random.choice(codes, size=cars.shape[0])
     
@@ -58,12 +60,11 @@ def update_cars():
 
     try:      
       query = f"""
-      TRUNCATE TABLE cars;
       INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
       {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
       """
       
-      print("Executing query:", query)
+      logging.info(f"Executing query: {query}")
       
       cur.execute(query)
       conn.commit()
@@ -88,7 +89,7 @@ def update_cars():
       random_car_id = cur.fetchone()[0]
       
       delete_query = f"DELETE FROM cars WHERE id = {random_car_id}"
-      logging.info("Executing delete query:", delete_query)
+      logging.info(f"Executing delete query: {delete_query}")
       
       cur.execute(delete_query)
       conn.commit()
@@ -107,6 +108,8 @@ def update_cars():
     hook = PostgresHook(postgres_conn_id="postgres_conn")
     conn = hook.get_conn()
     cur = conn.cursor()
+    
+    np.random.seed(int(time.time()))
 
     try:
       cur.execute(f"SELECT id FROM cars ORDER BY RANDOM() LIMIT {CARS_UPDATE_PER_UPDATE}")
@@ -117,7 +120,7 @@ def update_cars():
       SET price = {np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE)}
       WHERE id = {random_car_id};
       """
-      logging.info("Executing update query:", update_query)
+      logging.info(f"Executing update query: {update_query}")
       
       cur.execute(update_query)
       conn.commit()
