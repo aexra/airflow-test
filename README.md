@@ -22,3 +22,14 @@
 
 ## Локальная развертка
 
+Предполагается развертка под [Docker Desktop](https://www.docker.com/)
+
+Создайте сеть для изоляции системы
+```bash
+docker network create airflow-test-network
+```
+
+Запустите приложение
+```bash
+docker compose up
+```
