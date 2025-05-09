@@ -53,9 +53,9 @@ def refill_cars():
 
     try:
         query = f"""
-        TRUNCATE TABLE cars;
-        INSERT INTO cars (id, mark, model, engine_volume, published_at, price_usd) VALUES
-        {",\n".join([f"({c['id']}, '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['published_at']}, {c['price_usd']})" for i, c in cars.iterrows()])};
+        DELETE FROM cars;
+        INSERT INTO cars (mark, model, engine_volume, published_at, price_usd) VALUES
+        {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['published_at']}, {c['price_usd']})" for i, c in cars.iterrows()])};
         """
         
         print("Executing query:", query)
