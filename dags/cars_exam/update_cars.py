@@ -9,8 +9,11 @@ import pandas as pd
 import requests
 import xml.etree.ElementTree as ET
 
-from dags.cars_exam.conf import CARS_UPDATE_PER_UPDATE
-from dags.cars_exam.conf import CARS_DELETE_PER_UPDATE
+CAR_MIN_PRICE = 10_000
+CAR_MAX_PRICE = 50_000
+CARS_CREATE_PER_UPDATE=1
+CARS_DELETE_PER_UPDATE=1
+CARS_UPDATE_PER_UPDATE=2
 
 @dag(
     dag_id="update_cars",
@@ -24,11 +27,11 @@ def update_cars():
   @task
   def extract_random_cars():
     df = pd.read_csv('assets/cars.csv', sep=';')
-    rand = df.sample(CARS_PER_UPDATE, random_state=int(time.time())).copy()
+    rand = df.sample(CARS_CREATE_PER_UPDATE, random_state=int(time.time())).copy()
     return rand
   
   @task
-  def extract_currencies(cars):
+  def extract_currencies():
     r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
     root = ET.fromstring(r.text)
 
@@ -38,12 +41,12 @@ def update_cars():
       char_code = valute.find('CharCode').text      
       codes.append(char_code)
       
-    return cars, codes
+    return codes
 
   @task
   def transform_cars(cars, codes):
-    cars['price_usd'] = np.random.randint(10_000, 50_000, size=cars.shape[0])
-    cars['codes'] = np.random.choice(codes, size=cars.shape[0])
+    cars['price'] = np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE, size=cars.shape[0])
+    cars['currency'] = np.random.choice(codes, size=cars.shape[0])
     
     return cars
 
@@ -53,10 +56,7 @@ def update_cars():
     conn = hook.get_conn()
     cur = conn.cursor()
 
-    try:
-      cur.execute("SELECT car_id FROM cars ORDER BY RANDOM() LIMIT 1")
-      random_car_id = cur.fetchone()[0]
-      
+    try:      
       query = f"""
       TRUNCATE TABLE cars;
       INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
@@ -76,12 +76,68 @@ def update_cars():
     finally:
       cur.close()
       conn.close()
+      
+  @task
+  def delete_cars():
+    hook = PostgresHook(postgres_conn_id="postgres_conn")
+    conn = hook.get_conn()
+    cur = conn.cursor()
+
+    try:
+      cur.execute(f"SELECT id FROM cars ORDER BY RANDOM() LIMIT {CARS_DELETE_PER_UPDATE}")
+      random_car_id = cur.fetchone()[0]
+      
+      delete_query = f"DELETE FROM cars WHERE id = {random_car_id}"
+      logging.info("Executing delete query:", delete_query)
+      
+      cur.execute(delete_query)
+      conn.commit()
+      
+      logging.info(f"Successfully deleted {CARS_DELETE_PER_UPDATE} records")
+    except Exception as e:
+      conn.rollback()
+      logging.error(f"Error deleting data: {str(e)}")
+      raise
+    finally:
+      cur.close()
+      conn.close()
+
+  @task
+  def update_cars():
+    hook = PostgresHook(postgres_conn_id="postgres_conn")
+    conn = hook.get_conn()
+    cur = conn.cursor()
+
+    try:
+      cur.execute(f"SELECT id FROM cars ORDER BY RANDOM() LIMIT {CARS_UPDATE_PER_UPDATE}")
+      random_car_id = cur.fetchone()[0]
+      
+      update_query = f"""
+      UPDATE cars 
+      SET price = {np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE)}
+      WHERE id = {random_car_id};
+      """
+      logging.info("Executing update query:", update_query)
+      
+      cur.execute(update_query)
+      conn.commit()
+      
+      logging.info(f"Successfully updated {CARS_UPDATE_PER_UPDATE} records")
+    except Exception as e:
+      conn.rollback()
+      logging.error(f"Error updating data: {str(e)}")
+      raise
+    finally:
+      cur.close()
+      conn.close()
 
   extract = extract_random_cars()
-  extract_curs = extract_currencies(extract)
-  transform = transform_cars(extract_curs)
+  extract_curs = extract_currencies()
+  transform = transform_cars(extract, extract_curs)
+  delete = delete_cars()
+  update = update_cars()
   load = load_cars(transform)
 
-  extract >> extract_curs >> transform >> load
+  [extract, extract_curs] >> transform >> [delete, update, load]
 
 cars_dag = update_cars()

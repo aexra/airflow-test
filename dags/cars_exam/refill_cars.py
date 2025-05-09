@@ -9,6 +9,8 @@ import time
 import xml.etree.ElementTree as ET
 import requests
 
+CAR_MIN_PRICE = 10_000
+CAR_MAX_PRICE = 50_000
 CARS_PER_REFILL=10
 
 @dag(
@@ -44,7 +46,7 @@ def refill_cars():
     return rand
   
   @task
-  def extract_currencies(cars):
+  def extract_currencies():
     r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
     root = ET.fromstring(r.text)
 
@@ -54,12 +56,11 @@ def refill_cars():
       char_code = valute.find('CharCode').text      
       codes.append(char_code)
       
-    return (cars, codes)
+    return codes
 
   @task
-  def transform_cars(data):
-    cars, codes = data
-    cars['price'] = np.random.randint(10_000, 50_000, size=cars.shape[0])
+  def transform_cars(cars, codes):
+    cars['price'] = np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE, size=cars.shape[0])
     cars['currency'] = np.random.choice(codes, size=cars.shape[0])
     
     return cars
@@ -92,10 +93,10 @@ def refill_cars():
       conn.close()
 
   extract = extract_random_cars()
-  extract_curs = extract_currencies(extract)
-  transform = transform_cars(extract_curs)
+  extract_curs = extract_currencies()
+  transform = transform_cars(extract, extract_curs)
   load = load_cars(transform)
 
-  create_table >> extract >> extract_curs >> transform >> load
+  create_table >> [extract, extract_curs] >> transform >> load
 
 cars_dag = refill_cars()
