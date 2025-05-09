@@ -17,7 +17,7 @@ CARS_PER_REFILL=10
     dag_id="refill_cars",
     start_date=days_ago(0),
     description="Заполняет БД (псевдо)актуальными значениями",
-    schedule_interval="0 23 * * 1-5",
+    schedule_interval=None,
     tags=["cars_test"]
 )
 def refill_cars():

@@ -60,7 +60,7 @@ def update_cars():
       query = f"""
       TRUNCATE TABLE cars;
       INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
-      {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, {c['currency']}, {c['price']})" for i, c in cars.iterrows()])};
+      {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
       """
       
       print("Executing query:", query)
