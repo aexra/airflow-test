@@ -1,3 +1,4 @@
+import time
 from airflow.decorators import dag, task
 from airflow.utils.dates import days_ago
 from airflow.providers.postgres.operators.postgres import PostgresOperator
@@ -5,42 +6,25 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 import logging
 import numpy as np
 import pandas as pd
-import time
-import xml.etree.ElementTree as ET
 import requests
+import xml.etree.ElementTree as ET
 
-CARS_PER_REFILL=10
+from dags.cars_exam.conf import CARS_UPDATE_PER_UPDATE
+from dags.cars_exam.conf import CARS_DELETE_PER_UPDATE
 
 @dag(
-    dag_id="refill_cars",
+    dag_id="update_cars",
     start_date=days_ago(0),
-    description="Заполняет БД (псевдо)актуальными значениями",
+    description="Обновляет БД (псевдо)актуальными значениями",
     schedule_interval="0 23 * * 1-5",
     tags=["cars_test"]
 )
-def refill_cars():
-  
-  create_table = PostgresOperator(
-    task_id="create_table",
-    postgres_conn_id='postgres_conn',
-    database="db",
-    sql="""
-    CREATE TABLE IF NOT EXISTS Cars (
-      id serial PRIMARY KEY,
-      mark text NOT NULL,
-      model text NOT NULL,
-      engine_volume numeric NOT NULL,
-      year integer NOT NULL,
-      currency text NOT NULL,
-      price numeric NOT NULL
-    )
-    """
-  )
+def update_cars():
 
   @task
   def extract_random_cars():
     df = pd.read_csv('assets/cars.csv', sep=';')
-    rand = df.sample(CARS_PER_REFILL, random_state=int(time.time())).copy()
+    rand = df.sample(CARS_PER_UPDATE, random_state=int(time.time())).copy()
     return rand
   
   @task
@@ -54,13 +38,12 @@ def refill_cars():
       char_code = valute.find('CharCode').text      
       codes.append(char_code)
       
-    return (cars, codes)
+    return cars, codes
 
   @task
-  def transform_cars(data):
-    cars, codes = data
-    cars['price'] = np.random.randint(10_000, 50_000, size=cars.shape[0])
-    cars['currency'] = np.random.choice(codes, size=cars.shape[0])
+  def transform_cars(cars, codes):
+    cars['price_usd'] = np.random.randint(10_000, 50_000, size=cars.shape[0])
+    cars['codes'] = np.random.choice(codes, size=cars.shape[0])
     
     return cars
 
@@ -71,10 +54,13 @@ def refill_cars():
     cur = conn.cursor()
 
     try:
+      cur.execute("SELECT car_id FROM cars ORDER BY RANDOM() LIMIT 1")
+      random_car_id = cur.fetchone()[0]
+      
       query = f"""
       TRUNCATE TABLE cars;
       INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
-      {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
+      {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, {c['currency']}, {c['price']})" for i, c in cars.iterrows()])};
       """
       
       print("Executing query:", query)
@@ -96,6 +82,6 @@ def refill_cars():
   transform = transform_cars(extract_curs)
   load = load_cars(transform)
 
-  create_table >> extract >> extract_curs >> transform >> load
+  extract >> extract_curs >> transform >> load
 
-cars_dag = refill_cars()
+cars_dag = update_cars()
