@@ -31,5 +31,10 @@ docker network create airflow-test-network
 
 Запустите приложение
 ```bash
-docker compose up
+docker compose --profile flower up --remove-orphans
+```
+
+Если что-то очень пошло не так:
+```bash
+docker compose --profile flower down --volumes --remove-orphans
 ```

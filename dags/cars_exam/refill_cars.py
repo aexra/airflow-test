@@ -43,7 +43,6 @@ def refill_cars():
   @task
   def transform_cars(cars):
     cars['price_usd'] = np.random.randint(10_000, 50_000, size=cars.shape[0])
-    cars['id'] = range(1, cars.shape[0] + 1)
     return cars
 
   @task
