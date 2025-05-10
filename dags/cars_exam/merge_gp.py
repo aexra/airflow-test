@@ -8,6 +8,7 @@ from xml.etree import ElementTree as ET
 
 import pandas as pd
 import requests
+import logging
 
 @dag(
   dag_id="merge_cars",
@@ -47,8 +48,31 @@ def merge_gp():
     return cars
   
   @task
-  def load_data():
-    pass
+  def load_data(cars: pd.DataFrame):
+    hook = PostgresHook(postgres_conn_id="gp_conn")
+    conn = hook.get_conn()
+    cur = conn.cursor()
+
+    try:
+      query = f"""
+      TRUNCATE TABLE cars;
+      INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
+      {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
+      """
+      
+      logging.info(f"Executing query: {query}")
+      
+      cur.execute(query)
+      conn.commit()
+      
+      logging.info(f"Successfully inserted {len(cars)} records")
+    except Exception as e:
+      conn.rollback()
+      logging.error(f"Error inserting data: {str(e)}")
+      raise
+    finally:
+      cur.close()
+      conn.close()
   
   cars = extract_cars()
   rates = extract_exchange_rates()

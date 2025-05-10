@@ -306,6 +306,17 @@ services:
             }' \
             --conn-description 'S3/MinIO'
         fi
+
+        if ! airflow connections get gp_conn; then
+          airflow connections add 'gp_conn' \
+            --conn-type 'postgres' \
+            --conn-host 'gp' \
+            --conn-login 'admin' \
+            --conn-password 'admin' \
+            --conn-port '5432' \
+            --conn-schema 'db' \
+            --conn-description 'Greenplum DWH'
+        fi
         
         echo "Connection setup completed!"
     environment:
