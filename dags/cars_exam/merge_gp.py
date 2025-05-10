@@ -22,8 +22,10 @@ def merge_gp():
   @task
   def extract_cars(execution_date: datetime) -> pd.DataFrame: 
     hook = S3Hook(aws_conn_id='minio_conn')
-    file = hook.download_file(f"cars-{execution_date.date()}.csv", "cars")
+    filename = f"cars-{execution_date.date()}.csv"
+    file = hook.download_file(filename, "cars")
     df = pd.read_csv(file)
+    df["source_filename"] = filename
     return df
   
   @task
@@ -59,15 +61,29 @@ def merge_gp():
       ON CONFLICT (car_sk) DO NOTHING;
       """
       
+      logging.info(f"Refreshing cars dimensions table")
       logging.info(f"Executing query: {dim_query}")
       cur.execute(dim_query)
       
-      # fact_query = f"""
-      # INSERT INTO 
-      # """
+      close_old_fact_query = f"""
+      UPDATE fact_cars
+      SET 
+        is_current = false,
+        effective_to = CURRENT_TIMESTAMP
+      """
       
-      # logging.info(f"Executing query: {fact_query}")
-      # cur.execute(fact_query)
+      logging.info(f"Fixing cars facts table")
+      logging.info(f"Executing query: {close_old_fact_query}")
+      cur.execute(close_old_fact_query)
+      
+      fact_query = f"""
+      INSERT INTO fact_cars (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename) VALUES
+      {",\n".join([f"('{c['id']}', '{c['price']}', '{c['currency']}', '{c['rub']}', '{c['ex_rate']}', '{c['source_filename']}')" for _, c in cars.iterrows()])}
+      """
+      
+      logging.info(f"Updating cars facts table")
+      logging.info(f"Executing query: {fact_query}")
+      cur.execute(fact_query)
       
       conn.commit()
       
