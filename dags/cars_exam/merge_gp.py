@@ -44,7 +44,6 @@ def merge_gp():
   def transform_data(cars: pd.DataFrame, rate: dict[str, float]) -> pd.DataFrame:
     cars["ex_rate"] = cars["currency"].map(rate)
     cars["rub"] = cars["price"] * cars["ex_rate"]
-    print(cars.head())
     return cars
   
   @task
@@ -54,15 +53,22 @@ def merge_gp():
     cur = conn.cursor()
 
     try:
-      query = f"""
-      TRUNCATE TABLE cars;
-      INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
-      {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
+      dim_query = f"""
+      INSERT INTO dim_cars (car_sk, mark, model, engine_volume, year_of_manufacture) VALUES
+      {",\n".join([f"('{c['id']}', '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']})" for i, c in cars.iterrows()])}
+      ON CONFLICT (car_sk) DO NOTHING;
       """
       
-      logging.info(f"Executing query: {query}")
+      logging.info(f"Executing query: {dim_query}")
+      cur.execute(dim_query)
       
-      cur.execute(query)
+      # fact_query = f"""
+      # INSERT INTO 
+      # """
+      
+      # logging.info(f"Executing query: {fact_query}")
+      # cur.execute(fact_query)
+      
       conn.commit()
       
       logging.info(f"Successfully inserted {len(cars)} records")
