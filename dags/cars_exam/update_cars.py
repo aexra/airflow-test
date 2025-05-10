@@ -11,9 +11,9 @@ import xml.etree.ElementTree as ET
 
 CAR_MIN_PRICE = 10_000
 CAR_MAX_PRICE = 50_000
-CARS_CREATE_PER_UPDATE=1
-CARS_DELETE_PER_UPDATE=1
-CARS_UPDATE_PER_UPDATE=2
+CARS_CREATE_PER_UPDATE=0
+CARS_DELETE_PER_UPDATE=0
+CARS_UPDATE_PER_UPDATE=10
 
 @dag(
     dag_id="update_cars",
@@ -54,6 +54,8 @@ def update_cars():
 
   @task
   def load_cars(cars: pd.DataFrame):
+    if CARS_CREATE_PER_UPDATE == 0: return
+    
     hook = PostgresHook(postgres_conn_id="postgres_conn")
     conn = hook.get_conn()
     cur = conn.cursor()
@@ -80,6 +82,8 @@ def update_cars():
       
   @task
   def delete_cars():
+    if CARS_DELETE_PER_UPDATE == 0: return
+    
     hook = PostgresHook(postgres_conn_id="postgres_conn")
     conn = hook.get_conn()
     cur = conn.cursor()
@@ -113,16 +117,16 @@ def update_cars():
 
     try:
       cur.execute(f"SELECT id FROM cars ORDER BY RANDOM() LIMIT {CARS_UPDATE_PER_UPDATE}")
-      random_car_id = cur.fetchone()[0]
+      random_car_ids = list(map(lambda x: x[0], list(cur.fetchall())))
       
-      update_query = f"""
-      UPDATE cars 
-      SET price = {np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE)}
-      WHERE id = {random_car_id};
-      """
-      logging.info(f"Executing update query: {update_query}")
+      for i in random_car_ids:
+        update_query = f"""
+        UPDATE cars 
+        SET price = {np.random.randint(CAR_MIN_PRICE, CAR_MAX_PRICE)}
+        WHERE id = {i};
+        """
+        cur.execute(update_query)
       
-      cur.execute(update_query)
       conn.commit()
       
       logging.info(f"Successfully updated {CARS_UPDATE_PER_UPDATE} records")
