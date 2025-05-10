@@ -53,19 +53,32 @@ def merge_gp():
     Получает актуальные курсы валют с сайта ЦБ РФ на указанную дату.
     Returns:
       Словарь с курсами валют, где ключ - код валюты (например, 'USD'), а значение - курс за рубль.
+    Raises:
+      ValueError:
+        Если запрос вернул пустой список валют
+      Other:
+        Ошибки requests.get
     """
     
-    r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
-    root = ET.fromstring(r.text)
+    try:
+      r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
+      root = ET.fromstring(r.text)
 
-    valutes: dict[str, float] = dict()
+      valutes: dict[str, float] = dict()
 
-    for valute in root.findall('Valute'):
-      char_code = valute.find('CharCode').text
-      unit_rate = float(valute.find('VunitRate').text.replace(',', '.'))
-      valutes[char_code] = unit_rate
+      for valute in root.findall('Valute'):
+        char_code = valute.find('CharCode').text
+        unit_rate = float(valute.find('VunitRate').text.replace(',', '.'))
+        valutes[char_code] = unit_rate
       
-    return valutes
+      if len(valute.keys()) < 1:
+        raise ValueError("Currencies list is empty")  
+      
+      return valutes
+    except:
+      # Если произошла ошибка в получении данных - в GET или далее,
+      # остановим выполнение дага и выведем сообщение в лог
+      raise
   
   @task
   def transform_data(cars: pd.DataFrame, rate: dict[str, float]) -> pd.DataFrame:
@@ -78,6 +91,10 @@ def merge_gp():
       Обновленный DataFrame с колонками 'ex_rate' (курс валюты) и 'rub' (цена в рублях).
     """
     
+    # Здесь теоретически может возникнуть ситуация, когда
+    # необходимой валюты нет среди полученных,
+    # и в таком случае значения ex_rate и rub будут равны NaN.
+    # Если необходимо, можно добавить дополнительный обработчик.
     cars["ex_rate"] = cars["currency"].map(rate)
     cars["rub"] = cars["price"] * cars["ex_rate"]
     return cars
