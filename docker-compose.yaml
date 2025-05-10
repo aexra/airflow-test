@@ -383,7 +383,26 @@ services:
       exit 0;
       "
 
+  gp:
+    image: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: db
+    ports:
+      - "5434:5432"
+    volumes:
+      - gp-volume:/var/lib/postgresql/data
+      - ./init-gp:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin", "-d", "db"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
 volumes:
   postgres-db-volume:
   db-volume:
+  gp-volume:
   minio_data:
