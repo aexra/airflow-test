@@ -52,7 +52,7 @@ def merge_gp():
     """
     Получает актуальные курсы валют с сайта ЦБ РФ на указанную дату.
     Returns:
-      Словарь с курсами валют, где ключ - код валюты (например, 'USD'), а значение - курс в рублях.
+      Словарь с курсами валют, где ключ - код валюты (например, 'USD'), а значение - курс за рубль.
     """
     
     r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
@@ -99,6 +99,7 @@ def merge_gp():
     cur = conn.cursor()
 
     try:
+      # Обновим таблицу измерений для авто: если авто с таким car_id еще нет, добавим его
       dim_query = f"""
       INSERT INTO dim_cars (car_sk, mark, model, engine_volume, year_of_manufacture) VALUES
       {",\n".join([f"('{c['id']}', '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']})" for i, c in cars.iterrows()])}
@@ -109,6 +110,8 @@ def merge_gp():
       logging.info(f"Executing query: {dim_query}")
       cur.execute(dim_query)
       
+      # Т.к. текущее состояние автопарка напрямую зависит от содержимого csv файла в S3,
+      # можно смело все записи в таблице фактов отмечать старыми перед добавлением новых
       close_old_fact_query = f"""
       UPDATE fact_cars
       SET 
@@ -120,6 +123,7 @@ def merge_gp():
       logging.info(f"Executing query: {close_old_fact_query}")
       cur.execute(close_old_fact_query)
       
+      # Добавление актуальных записей в таблицу фактов
       fact_query = f"""
       INSERT INTO fact_cars (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename) VALUES
       {",\n".join([f"('{c['id']}', '{c['price']}', '{c['currency']}', '{c['rub']}', '{c['ex_rate']}', '{c['source_filename']}')" for _, c in cars.iterrows()])}
@@ -129,14 +133,16 @@ def merge_gp():
       logging.info(f"Executing query: {fact_query}")
       cur.execute(fact_query)
       
+      # Если все запросы выполнились успешно, фиксируем изменения
       conn.commit()
-      
       logging.info(f"Successfully inserted {len(cars)} records")
     except Exception as e:
+      # Иначе откатываем их
       conn.rollback()
       logging.error(f"Error inserting data: {str(e)}")
       raise
     finally:
+      # Закрываем подключение
       cur.close()
       conn.close()
   
