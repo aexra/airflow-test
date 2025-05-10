@@ -12,7 +12,7 @@ from pandas import DataFrame
   dag_id="s3_save_current",
   start_date=days_ago(0),
   description="Заполняет БД (псевдо)актуальными значениями",
-  schedule_interval="0 0 * * 1-5",
+  schedule_interval="0 23 * * 1-5",
   tags=["cars_test"]
 )
 def save():

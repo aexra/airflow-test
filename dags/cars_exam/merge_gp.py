@@ -14,7 +14,7 @@ import logging
   dag_id="merge_cars",
   start_date=days_ago(0),
   description="Переводит стоимость в рублевый эквивалент по актуальному на дату создания файла курсу ЦБ и складывает эту информацию в таблицу в GreenPlum",
-  schedule_interval=None,
+  schedule_interval="0 0 * * 1-5",
   tags=["cars_test"]
 )
 def merge_gp():

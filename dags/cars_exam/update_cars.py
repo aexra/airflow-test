@@ -19,7 +19,7 @@ CARS_UPDATE_PER_UPDATE=2
     dag_id="update_cars",
     start_date=days_ago(0),
     description="Обновляет БД (псевдо)актуальными значениями",
-    schedule_interval="0 23 * * 1-5",
+    schedule_interval="0 22 * * 1-5",
     tags=["cars_test"]
 )
 def update_cars():
