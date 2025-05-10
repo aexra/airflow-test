@@ -20,14 +20,11 @@
 
 ## Реализация
 
+[Итоговый DAG по заданию](./dags/cars_exam/merge_gp.py)
+
 ## Локальная развертка
 
 Предполагается развертка под [Docker Desktop](https://www.docker.com/)
-
-Создайте сеть для изоляции системы
-```bash
-docker network create airflow-test-network
-```
 
 Запустите приложение
 ```bash
