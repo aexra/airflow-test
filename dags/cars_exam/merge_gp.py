@@ -23,7 +23,6 @@ def merge_gp():
     hook = S3Hook(aws_conn_id='minio_conn')
     file = hook.download_file(f"cars-{execution_date.date()}.csv", "cars")
     df = pd.read_csv(file)
-    print(df.head())
     return df
   
   @task
@@ -34,15 +33,17 @@ def merge_gp():
     valutes: dict[str, float] = dict()
 
     for valute in root.findall('Valute'):
-      char_code = valute.find('CharCode').text      
-      unit_rate = valute.find('VunitRate').text
+      char_code = valute.find('CharCode').text
+      unit_rate = float(valute.find('VunitRate').text.replace(',', '.'))
       valutes[char_code] = unit_rate
       
     return valutes
   
   @task
   def transform_data(cars: pd.DataFrame, rate: dict[str, float]):
-    pass
+    cars["ex_rate"] = cars["currency"].map(rate)
+    cars["rub"] = cars["price"] * cars["ex_rate"]
+    print(cars.head())
   
   @task
   def load_data():
