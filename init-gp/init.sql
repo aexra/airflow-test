@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS dim_cars (
 	engine_volume text NOT NULL,
 	year_of_manufacture integer NOT NULL,
 	last_modified timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 CREATE TABLE IF NOT EXISTS fact_cars (
 	sk serial PRIMARY KEY,
@@ -20,4 +20,4 @@ CREATE TABLE IF NOT EXISTS fact_cars (
 	source_filename text NOT NULL,
 	load_ts timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	CONSTRAINT fk_car_sk FOREIGN KEY (car_sk) REFERENCES dim_cars(car_sk)
-)
+);

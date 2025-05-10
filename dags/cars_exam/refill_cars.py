@@ -76,7 +76,7 @@ def refill_cars():
     try:
       query = f"""
       TRUNCATE TABLE cars;
-      INSERT INTO cars (mark, model, engine_volume, year, currency, price) VALUES
+      INSERT INTO cars (mark, model, engine_volume, year_of_manufacture, currency, price) VALUES
       {",\n".join([f"('{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']}, '{c['currency']}', {c['price']})" for i, c in cars.iterrows()])};
       """
       

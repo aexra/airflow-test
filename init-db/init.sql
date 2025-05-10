@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS Cars (
 	mark text NOT NULL,
 	model text NOT NULL,
 	engine_volume numeric NOT NULL,
-	published_at integer NOT NULL,
-	price_usd numeric NOT NULL
-)
+	year_of_manufacture integer NOT NULL,
+	currency text NOT NULL,
+	price numeric NOT NULL
+);

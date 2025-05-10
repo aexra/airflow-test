@@ -34,7 +34,7 @@ def merge_gp():
     files = hook.list_keys("cars")
     
     if not files:
-      raise ValueError(f"Файлы не найдены в бакете 'cars'")
+      raise ValueError("Bucket 'cars' does not contain files")
     
     files_with_metadata = [(key, hook.get_key(key, 'cars').last_modified) for key in files]
     
@@ -104,13 +104,16 @@ def merge_gp():
       logging.info(f"Validating timestamps")
       # logging.info(f"Executing query: {validation_query}")
       cur.execute(validation_query)
-      name = cur.fetchone()[0]
-      logging.error(name)
+      result = cur.fetchone()
+      if (result):
+        filename = result[0]
+        if filename > cars["source_filename"][0]:
+          raise ValueError("The file from S3 is older than used in facts table")
       
     def update_dim_cars(cur) -> None:
       dim_query = f"""
       INSERT INTO public."dim_cars" (car_sk, mark, model, engine_volume, year_of_manufacture) VALUES
-      {",\n".join([f"('{c['id']}', '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']})" for i, c in cars.iterrows()])}
+      {",\n".join([f"('{c['id']}', '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year_of_manufacture']})" for i, c in cars.iterrows()])}
       ON CONFLICT (car_sk) DO NOTHING;
       """
       
