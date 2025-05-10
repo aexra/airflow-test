@@ -21,6 +21,14 @@ def merge_gp():
   
   @task
   def extract_cars() -> pd.DataFrame: 
+    """
+    Извлекает последний загруженный CSV-файл с данными об автомобилях из S3 (MinIO).
+    Returns:
+      pd.DataFrame: DataFrame с данными об автомобилях, включая имя исходного файла.
+    Raises:
+      ValueError: Если в бакете 'cars' не найдено ни одного файла.
+    """
+    
     hook = S3Hook(aws_conn_id='minio_conn')
     
     files = hook.list_keys("cars")
@@ -41,6 +49,12 @@ def merge_gp():
   
   @task
   def extract_exchange_rates() -> dict[str, float]:
+    """
+    Получает актуальные курсы валют с сайта ЦБ РФ на указанную дату.
+    Returns:
+      Словарь с курсами валют, где ключ - код валюты (например, 'USD'), а значение - курс в рублях.
+    """
+    
     r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
     root = ET.fromstring(r.text)
 
@@ -55,12 +69,31 @@ def merge_gp():
   
   @task
   def transform_data(cars: pd.DataFrame, rate: dict[str, float]) -> pd.DataFrame:
+    """
+    Преобразует данные об автомобилях, добавляя расчет стоимости в рублях.
+    Args:
+      cars: DataFrame с данными об автомобилях.
+      rate: Словарь с курсами валют.
+    Returns:
+      Обновленный DataFrame с колонками 'ex_rate' (курс валюты) и 'rub' (цена в рублях).
+    """
+    
     cars["ex_rate"] = cars["currency"].map(rate)
     cars["rub"] = cars["price"] * cars["ex_rate"]
     return cars
   
   @task
   def load_data(cars: pd.DataFrame):
+    """
+    Загружает данные об автомобилях в GreenPlum, обновляя таблицу измерений (dim_cars)
+    и таблицу фактов (fact_cars) с историей изменений цен.
+    Args:
+      cars: DataFrame с преобразованными данными об автомобилях.
+    Note:
+      - Для dimension-таблицы используется INSERT ON CONFLICT DO NOTHING чтобы не дублировать авто по ID.
+      - В fact-таблице сначала закрываются старые записи (is_current = false, effective_to = CURRENT_TIMESTAMP), затем добавляются новые.
+    """
+        
     hook = PostgresHook(postgres_conn_id="gp_conn")
     conn = hook.get_conn()
     cur = conn.cursor()
