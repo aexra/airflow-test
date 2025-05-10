@@ -20,12 +20,23 @@ import logging
 def merge_gp():
   
   @task
-  def extract_cars(execution_date: datetime) -> pd.DataFrame: 
+  def extract_cars() -> pd.DataFrame: 
     hook = S3Hook(aws_conn_id='minio_conn')
-    filename = f"cars-{execution_date.date()}.csv"
-    file = hook.download_file(filename, "cars")
+    
+    files = hook.list_keys("cars")
+    
+    if not files:
+      raise ValueError(f"Файлы не найдены в бакете 'cars'")
+    
+    files_with_metadata = [(key, hook.get_key(key, 'cars').last_modified) for key in files]
+    
+    # Сортируем по дате изменения (последний файл будет первым)
+    files_with_metadata.sort(key=lambda x: x[1], reverse=True)
+    latest_file_key = files_with_metadata[0][0]
+    
+    file = hook.download_file(latest_file_key, "cars")
     df = pd.read_csv(file)
-    df["source_filename"] = filename
+    df["source_filename"] = latest_file_key
     return df
   
   @task

@@ -47,7 +47,7 @@ def save():
   def transform_cars(cars_data: tuple[list[tuple], list]):
     cars, columns = cars_data
     df = DataFrame(cars, columns=columns)
-    date = datetime.date.today()
+    date = datetime.datetime.now()
     df["collected_at"] = [date] * df.shape[0]
     return df, date
 
