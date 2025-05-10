@@ -40,10 +40,11 @@ def merge_gp():
     return valutes
   
   @task
-  def transform_data(cars: pd.DataFrame, rate: dict[str, float]):
+  def transform_data(cars: pd.DataFrame, rate: dict[str, float]) -> pd.DataFrame:
     cars["ex_rate"] = cars["currency"].map(rate)
     cars["rub"] = cars["price"] * cars["ex_rate"]
     print(cars.head())
+    return cars
   
   @task
   def load_data():
@@ -52,7 +53,7 @@ def merge_gp():
   cars = extract_cars()
   rates = extract_exchange_rates()
   transform = transform_data(cars, rates)
-  load = load_data()
+  load = load_data(transform)
   
   [cars, rates] >> transform >> load
   
