@@ -75,10 +75,10 @@ def merge_gp():
         raise ValueError("Currencies list is empty")  
       
       return valutes
-    except:
+    except Exception as e:
       # Если произошла ошибка в получении данных - в GET или далее,
       # остановим выполнение дага и выведем сообщение в лог
-      raise
+      raise Exception(f"Exception raised while attempting to get currencies courses: {e}")
   
   @task
   def transform_data(cars: pd.DataFrame, rate: dict[str, float]) -> pd.DataFrame:
