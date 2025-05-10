@@ -94,44 +94,68 @@ def merge_gp():
       - В fact-таблице сначала закрываются старые записи (is_current = false, effective_to = CURRENT_TIMESTAMP), затем добавляются новые.
     """
         
-    hook = PostgresHook(postgres_conn_id="gp_conn")
-    conn = hook.get_conn()
-    cur = conn.cursor()
-
-    try:
-      # Обновим таблицу измерений для авто: если авто с таким car_id еще нет, добавим его
+    def validate_filename(cur, cars: pd.DataFrame) -> bool:
+      validation_query = f"""
+      SELECT (source_filename) FROM public."fact_cars" fs
+      ORDER BY fs."source_filename" DESC
+      LIMIT 1
+      """
+      
+      logging.info(f"Validating timestamps")
+      # logging.info(f"Executing query: {validation_query}")
+      cur.execute(validation_query)
+      name = cur.fetchone()[0]
+      logging.error(name)
+      
+    def update_dim_cars(cur) -> None:
       dim_query = f"""
-      INSERT INTO dim_cars (car_sk, mark, model, engine_volume, year_of_manufacture) VALUES
+      INSERT INTO public."dim_cars" (car_sk, mark, model, engine_volume, year_of_manufacture) VALUES
       {",\n".join([f"('{c['id']}', '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year']})" for i, c in cars.iterrows()])}
       ON CONFLICT (car_sk) DO NOTHING;
       """
       
       logging.info(f"Refreshing cars dimensions table")
-      logging.info(f"Executing query: {dim_query}")
+      # logging.info(f"Executing query: {dim_query}")
       cur.execute(dim_query)
       
-      # Т.к. текущее состояние автопарка напрямую зависит от содержимого csv файла в S3,
-      # можно смело все записи в таблице фактов отмечать старыми перед добавлением новых
+    def close_old_fact_cars(cur) -> None:
       close_old_fact_query = f"""
-      UPDATE fact_cars
+      UPDATE public."fact_cars"
       SET 
         is_current = false,
         effective_to = CURRENT_TIMESTAMP
       """
       
       logging.info(f"Fixing cars facts table")
-      logging.info(f"Executing query: {close_old_fact_query}")
+      # logging.info(f"Executing query: {close_old_fact_query}")
       cur.execute(close_old_fact_query)
-      
-      # Добавление актуальных записей в таблицу фактов
+    
+    def add_new_fact_cars(cur) -> None:
       fact_query = f"""
-      INSERT INTO fact_cars (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename) VALUES
+      INSERT INTO public."fact_cars" (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename) VALUES
       {",\n".join([f"('{c['id']}', '{c['price']}', '{c['currency']}', '{c['rub']}', '{c['ex_rate']}', '{c['source_filename']}')" for _, c in cars.iterrows()])}
       """
       
       logging.info(f"Updating cars facts table")
-      logging.info(f"Executing query: {fact_query}")
+      # logging.info(f"Executing query: {fact_query}")
       cur.execute(fact_query)
+          
+    hook = PostgresHook(postgres_conn_id="gp_conn")
+    conn = hook.get_conn()
+    cur = conn.cursor()
+
+    try:
+      validate_filename(cur, cars)
+      
+      # Обновим таблицу измерений для авто: если авто с таким car_id еще нет, добавим его
+      update_dim_cars(cur)
+      
+      # Т.к. текущее состояние автопарка напрямую зависит от содержимого csv файла в S3,
+      # можно смело все записи в таблице фактов отмечать старыми перед добавлением новых
+      close_old_fact_cars(cur)
+      
+      # Добавление актуальных записей в таблицу фактов
+      add_new_fact_cars(cur)
       
       # Если все запросы выполнились успешно, фиксируем изменения
       conn.commit()
