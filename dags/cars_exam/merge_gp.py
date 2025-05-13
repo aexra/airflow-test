@@ -60,6 +60,27 @@ def merge_gp():
         Ошибки requests.get
     """
     
+    fallback = 'assets/fallbackExchangeRate.xml'
+    
+    def parse_rate_from_xml(xml_content: str) -> dict[str, float]:
+      """Парсит курс USD из XML-контента."""
+      try:
+          root = ET.fromstring(xml_content)
+          valutes: dict[str, float] = dict()
+
+          for valute in root.findall('Valute'):
+            char_code = valute.find('CharCode').text
+            unit_rate = float(valute.find('VunitRate').text.replace(',', '.'))
+            valutes[char_code] = unit_rate
+          
+          if len(valute.keys()) < 1:
+            raise ValueError("Currencies list is empty")  
+          
+          return valutes
+      except (ET.ParseError, AttributeError, ValueError) as e:
+          logging.error(f"Error parsing XML: {e}")
+          return {}
+    
     try:
       date = datetime.now()
       
@@ -69,25 +90,23 @@ def merge_gp():
         
       date_str = date.strftime('%d/%m/%Y')
       
-      r = requests.get(f'https://cbr.ru/scripts/xml_daily.asp?date_req={date_str}')
+      r = requests.get(f'https://cbr.ru/scripts/xml_daily.asp?date_req={date_str}', timeout=10)
       r.raise_for_status()
-      root = ET.fromstring(r.text)
-
-      valutes: dict[str, float] = dict()
-
-      for valute in root.findall('Valute'):
-        char_code = valute.find('CharCode').text
-        unit_rate = float(valute.find('VunitRate').text.replace(',', '.'))
-        valutes[char_code] = unit_rate
       
-      if len(valute.keys()) < 1:
-        raise ValueError("Currencies list is empty")  
-      
-      return valutes
+      if rate := parse_rate_from_xml(r.text):
+        # Обновляем fallback файл при успешном получении
+        with open(fallback, 'w') as f:
+            f.write(r.text)
+        return rate
+
     except Exception as e:
       # Если произошла ошибка в получении данных - в GET или далее,
-      # остановим выполнение дага и выведем сообщение в лог
-      raise Exception(f"Exception raised while attempting to get currencies courses: {e}")
+      # попробуем получить курс из резервного файла
+      try:
+        with open(fallback, 'r') as f:
+          return parse_rate_from_xml(f.read())
+      except:
+        raise Exception(f"Cannot get exchange rates from any source. Inner exception: {e}")
   
   @task
   def transform_data(cars: pd.DataFrame, rate: dict[str, float]) -> pd.DataFrame:
