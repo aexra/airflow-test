@@ -24,6 +24,8 @@
 
 ##### Задание 1
 
+> Используя свою первую реализацию задачи, проработать отказоустойчисвость задействованных элементов КХД следующим образом: указать в docstrings к каждому методу/таске, где необходимо, что может пойти не так (и нарушить DataPipeline); предлжить способ устранения данной ошибки (так, чтобы DataPipeline был стабилен).
+
 Глобально исходный граф был полностью переработан, но на примере первой реализации выделим что может пойти не так и как это можно исправить, а также исправим в новой реализации.
 
 ###### Получение курса валют
@@ -393,6 +395,66 @@ def load_data(cars: pd.DataFrame):
 
 ##### Задание 2
 
+> Так же, в docstrings, пометить элементы, несоответствующие основным принципам КХД. Переработать для соответствия.
+
+В `Задание 1` уже в общих чертах было упомянуто что конкретно было исправлено для соответствия принципам КХД, так что здесь немного раскроем тему.
+
+Для организации КХД была применена методология [Dimensional Modeling](https://en.wikipedia.org/wiki/Dimensional_modeling).
+Историзм был реализован по принципу [Slowly Changing Dimensions](https://ru.wikipedia.org/wiki/Медленно_меняющееся_измерение) типа **SCD 2**.
+
+Таблицы, [создаваемые](./init-gp/init.sql) по вышеописанному подходу:
+
+```sql
+CREATE TABLE IF NOT EXISTS dim_cars (
+	car_sk serial PRIMARY KEY,
+	mark text NOT NULL,
+	model text NOT NULL,
+	engine_volume text NOT NULL,
+	year_of_manufacture integer NOT NULL,
+	last_modified timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fact_cars (
+	sk serial PRIMARY KEY,
+	car_sk integer NOT NULL,
+	price_foreign numeric NOT NULL,
+	currency_code_foreign text NOT NULL,
+	price_rub numeric NOT NULL,
+	ex_rate numeric NOT NULL,
+	effective_from timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	effective_to timestamp NOT NULL DEFAULT 'infinity',
+	is_current boolean NOT NULL DEFAULT true,
+	source_filename text NOT NULL,
+	last_modified timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	CONSTRAINT fk_car_sk FOREIGN KEY (car_sk) REFERENCES dim_cars(car_sk)
+);
+```
+
+В таблице измерений будут храниться:
+- Суррогатный ключ (id авто)
+- Марка
+- Модель
+- Объем двигателя
+- Год производства
+- Дата модификации записи
+
+В таблице фактов будут храниться:
+- Суррогатный ключ
+- Внешний ключ на таблицу измерений
+- Код иностранной валюты
+- Цена в иностранной валюте
+- Курс обмена
+- Цена в рублях
+- Дата создания записи
+- Дата закрытия записи (неактуальность)
+- Флаг актуальности
+- Имя файла из которого был взят этот кортеж
+- Дата модификации записи
+
+> [!NOTE]
+> В целом, атрибут `is_current` избыточен, т.к. effective_to уже указывает на актуальность, но в аналитических запросах проверка is_current = true выглядит более явной чем effective_to = infinity.
+> То же самое можно сказать про атрибуты `last_modified` в обеих таблицах, т.к. в таблице измерений изменения не предполагаются, а в таблице фактов этот атрибут будет равен или effective_from или effective_to.
+
 ##### Задание 3
 
 > Спроектировать вьюху для аналитического отчета "Динамика цены автомобиля за месяц", с возможностью составить аналитику в разрезе марки или модели или года выпуска. Описать структуру в любой удобной форме.
@@ -460,6 +522,8 @@ WHERE
 
 Предполагается развертка под [Docker Desktop](https://www.docker.com/)
 
+[docker-compose.yml](./docker-compose.yaml)
+
 ### Запуск приложения
 
 ```bash
@@ -500,3 +564,8 @@ docker compose --profile flower up --remove-orphans
 `update_cars` вызывается по будням в 22:00 для симуляции изменения состояния автопарка
 `s3_save_current` вызывается по будням в 23:00 для доставки файла в S3
 `merge_cars` вызывается с понедельника по субботу в 00:00 для записи в КХД
+
+## Пример работы
+
+Состояние таблицы fact_cars после нескольких выполнений DAG
+![](./docs/assets/Снимок%20экрана%202025-05-13%20121124.png)
