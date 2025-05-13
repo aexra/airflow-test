@@ -147,7 +147,7 @@ def download_csv_from_s3(bucket_name, object_key, local_path, **kwargs):
   Извлекает файл с машинами из S3
   Проблемы:
     1. Должным образом не обрабатывается ошибка отсутствия ключа (бакет/файл не существует).
-    2. Текущая реализация в принципе предполагает наличия только одного файла в бакете, что не позволит просматривать старые записи.
+    2. Текущая реализация в принципе предполагает наличие только одного файла в бакете, что не позволит просматривать старые записи.
   """
   s3 = S3Hook(aws_conn_id='minio_default')
   s3.get_key(object_key, bucket_name).download_file(local_path)
@@ -190,7 +190,206 @@ def extract_cars() -> pd.DataFrame:
 
 ###### Запись в КХД
 
+```py
+def process_and_load_to_db(csv_path, exchange_rate, **kwargs):
+  """
+  Конвертирует типы где необходимо в числовые, очищает таблицу и заполняет актуальными данными
+  Проблемы:
+    1. Это вообще не принцип работы КХД. Сейчас эта таблица подразумевает хранение актуальной информации, следовательно нет никакого историзма.
+    2. Не обрабатываются исключения провайдера PostgreSQL.
+  """
+  df = pd.read_csv(csv_path, sep=';')
+  df['price_usd'] = pd.to_numeric(df['price_usd'], errors='coerce')
+  df['price_rub'] = df['price_usd'] * float(exchange_rate)
 
+  conn = psycopg2.connect(**PG_CONN_PARAMS)
+  cur = conn.cursor()
+
+  cur.execute('TRUNCATE TABLE cars;')
+
+  for _, row in df.iterrows():
+      cur.execute(
+          """
+          INSERT INTO cars (brand, model, engine_capacity, prod_year, price)
+          VALUES (%s, %s, %s, %s, %s);
+          """,
+          (row['brand'], row['model'], row['engine_capacity'], row['prod_year'], row['price_rub'])
+      )
+
+  conn.commit()
+  cur.close()
+  conn.close()
+```
+
+###### Решение
+
+1. Полностью переработаем принцип записи. 
+1.1. Минимизируем затраты памяти разделив записи на таблицу фактов и таблицу измерений (fact_cars, dim_cars) для логически неизменяемых полей: марка, модель, год производства.
+1.2. При получении информации о новых авто будем заносить их атрибуты в dim_cars, и создавать первую запись об их стоимости в fact_cars, указывая `is_current = True` и `effective_to = infinity`, что будет указывать на актуальность кортежа.
+1.3. Если в полученных данных произошли изменения (авто "пропало" из csv или цена на него изменилась) - будем указывать у последней записи `is_current = False` и `effective_to = CURRENT_TIMESTAMP`, что будет указывать на устаревшие кортежи.
+2. Добавим обработку исключений для SQL запросов.
+
+```py
+@task
+def load_data(cars: pd.DataFrame):
+  """
+  Загружает данные об автомобилях в GreenPlum, обновляя таблицу измерений (dim_cars)
+  и таблицу фактов (fact_cars) с историей изменений цен.
+  Args:
+    cars: DataFrame с преобразованными данными об автомобилях.
+  Note:
+    - Для dimension-таблицы используется INSERT ON CONFLICT DO NOTHING чтобы не дублировать авто по ID.
+    - В fact-таблице сначала закрываются старые записи (is_current = false, effective_to = CURRENT_TIMESTAMP), затем добавляются новые.
+  """
+      
+  def validate_filename(cur) -> bool:
+    validation_query = f"""
+    SELECT (source_filename) FROM public."fact_cars" fs
+    ORDER BY fs."source_filename" DESC
+    LIMIT 1
+    """
+    
+    logging.info(f"Validating timestamps")
+    # logging.info(f"Executing query: {validation_query}")
+    cur.execute(validation_query)
+    result = cur.fetchone()
+    if (result):
+      filename = result[0]
+      if filename > cars["source_filename"][0]:
+        raise ValueError("The file from S3 is older than used in facts table")
+    
+  def update_dim_cars(cur) -> None:
+    dim_query = f"""
+    INSERT INTO public."dim_cars" (car_sk, mark, model, engine_volume, year_of_manufacture) VALUES
+    {",\n".join([f"('{c['id']}', '{c['mark']}', '{c['model']}', {c['engine_volume']}, {c['year_of_manufacture']})" for i, c in cars.iterrows()])}
+    ON CONFLICT (car_sk) DO NOTHING;
+    """
+    
+    logging.info(f"Refreshing cars dimensions table")
+    # logging.info(f"Executing query: {dim_query}")
+    cur.execute(dim_query)
+    
+  def close_old_fact_cars(cur) -> None:
+    # Создаем временную таблицу с новыми данными
+    temp_table_query = """
+    CREATE TEMP TABLE temp_cars_data AS
+    SELECT 
+        car_sk, 
+        price_foreign, 
+        currency_code_foreign, 
+        price_rub, 
+        ex_rate
+    FROM (VALUES
+    """ + ",\n".join([
+        f"({c['id']}, {c['price']}, '{c['currency']}', {c['rub']}, {c['ex_rate']})" 
+        for _, c in cars.iterrows()
+    ]) + """) AS t(car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate);
+    """
+    
+    # Закрываем записи: 1) где изменились данные, 2) которых нет в новых данных
+    update_query = """
+    -- Закрываем записи с измененными данными
+    UPDATE public."fact_cars" fc
+    SET 
+        is_current = false,
+        effective_to = CURRENT_TIMESTAMP
+    FROM temp_cars_data temp
+    WHERE 
+        fc.car_sk = temp.car_sk
+        AND fc.is_current = true
+        AND (
+            fc.price_foreign != temp.price_foreign
+            OR fc.currency_code_foreign != temp.currency_code_foreign
+            OR fc.price_rub != temp.price_rub
+            OR fc.ex_rate != temp.ex_rate
+        );
+
+    -- Закрываем записи для машин, которых нет в новых данных
+    UPDATE public."fact_cars" fc
+    SET 
+        is_current = false,
+        effective_to = CURRENT_TIMESTAMP
+    WHERE 
+        fc.is_current = true
+        AND NOT EXISTS (
+            SELECT 1 FROM temp_cars_data temp 
+            WHERE temp.car_sk = fc.car_sk
+        );
+
+    DROP TABLE temp_cars_data;
+    """
+    
+    logging.info(f"Fixing cars facts table")
+    # logging.info(f"Executing query: {close_old_fact_query}")
+    cur.execute(temp_table_query)
+    cur.execute(update_query)
+  
+  def add_new_fact_cars(cur) -> None:
+    # Вставляем только записи для машин, у которых изменились данные
+    fact_query = """
+    INSERT INTO public."fact_cars" 
+        (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename)
+    SELECT 
+        t.car_sk, 
+        t.price_foreign, 
+        t.currency_code_foreign, 
+        t.price_rub, 
+        t.ex_rate,
+        %s
+    FROM (
+        VALUES
+    """ + ",\n".join([
+        f"({c['id']}, {c['price']}, '{c['currency']}', {c['rub']}, {c['ex_rate']})" 
+        for _, c in cars.iterrows()
+    ]) + """
+    ) AS t(car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate)
+    LEFT JOIN public."fact_cars" fc ON 
+        t.car_sk = fc.car_sk 
+        AND fc.is_current = true
+    WHERE 
+        fc.car_sk IS NULL
+        OR (
+            t.price_foreign != fc.price_foreign
+            OR t.currency_code_foreign != fc.currency_code_foreign
+            OR t.price_rub != fc.price_rub
+            OR t.ex_rate != fc.ex_rate
+        );
+    """
+    
+    logging.info(f"Updating cars facts table")
+    # logging.info(f"Executing query: {fact_query}")
+    cur.execute(fact_query, (cars["source_filename"][0],))
+        
+  hook = PostgresHook(postgres_conn_id="gp_conn")
+  conn = hook.get_conn()
+  cur = conn.cursor()
+
+  try:
+    validate_filename(cur)
+    
+    # Обновим таблицу измерений для авто: если авто с таким car_id еще нет, добавим его
+    update_dim_cars(cur)
+    
+    # Т.к. текущее состояние автопарка напрямую зависит от содержимого csv файла в S3,
+    # можно смело все записи в таблице фактов отмечать старыми перед добавлением новых
+    close_old_fact_cars(cur)
+    
+    # Добавление актуальных записей в таблицу фактов
+    add_new_fact_cars(cur)
+    
+    # Если все запросы выполнились успешно, фиксируем изменения
+    conn.commit()
+    logging.info(f"Successfully inserted {len(cars)} records")
+  except Exception as e:
+    # Иначе откатываем их
+    conn.rollback()
+    logging.error(f"Error inserting data: {str(e)}")
+    raise
+  finally:
+    # Закрываем подключение
+    cur.close()
+    conn.close()
+```
 
 ##### Задание 2
 
