@@ -34,7 +34,7 @@ def merge_gp():
     files = hook.list_keys("cars")
     
     if not files:
-      raise ValueError("Bucket 'cars' does not contain files")
+      raise ValueError("Bucket 'cars' does not exists or does not contain files")
     
     files_with_metadata = [(key, hook.get_key(key, 'cars').last_modified) for key in files]
     
