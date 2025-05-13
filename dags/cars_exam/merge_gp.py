@@ -120,7 +120,7 @@ def merge_gp():
       - В fact-таблице сначала закрываются старые записи (is_current = false, effective_to = CURRENT_TIMESTAMP), затем добавляются новые.
     """
         
-    def validate_filename(cur, cars: pd.DataFrame) -> bool:
+    def validate_filename(cur) -> bool:
       validation_query = f"""
       SELECT (source_filename) FROM public."fact_cars" fs
       ORDER BY fs."source_filename" DESC
@@ -174,7 +174,7 @@ def merge_gp():
     cur = conn.cursor()
 
     try:
-      validate_filename(cur, cars)
+      validate_filename(cur)
       
       # Обновим таблицу измерений для авто: если авто с таким car_id еще нет, добавим его
       update_dim_cars(cur)
