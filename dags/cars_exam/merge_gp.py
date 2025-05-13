@@ -64,7 +64,7 @@ def merge_gp():
       date = datetime.now()
       
       if date.weekday() >= 5:
-        days_to_friday = (date.weekday() - 4) % 7
+        days_to_friday = date.weekday() - 4
         date = date - timedelta(days=days_to_friday)
         
       date_str = date.strftime('%d/%m/%Y')
