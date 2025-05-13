@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from airflow.decorators import dag, task
 from airflow.utils.dates import days_ago
 from airflow.providers.postgres.operators.postgres import PostgresOperator
@@ -47,6 +48,17 @@ def refill_cars():
   
   @task
   def extract_currencies():
+    date = datetime.now()
+      
+    if date.weekday() >= 5:
+      days_to_friday = (date.weekday() - 4) % 7
+      date = date - timedelta(days=days_to_friday)
+      
+    date_str = date.strftime('%d/%m/%Y')
+    
+    r = requests.get(f'https://cbr.ru/scripts/xml_daily.asp?date_req={date_str}')
+    r.raise_for_status()
+    
     r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
     root = ET.fromstring(r.text)
 

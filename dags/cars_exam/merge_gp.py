@@ -3,7 +3,7 @@ from airflow.utils.dates import days_ago
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from xml.etree import ElementTree as ET
 
 import pandas as pd
@@ -14,7 +14,7 @@ import logging
   dag_id="merge_cars",
   start_date=days_ago(0),
   description="Переводит стоимость в рублевый эквивалент по актуальному на дату создания файла курсу ЦБ и складывает эту информацию в таблицу в GreenPlum",
-  schedule_interval="0 0 * * 1-5",
+  schedule_interval="0 0 * * 1-6",
   tags=["cars_test"]
 )
 def merge_gp():
@@ -50,7 +50,7 @@ def merge_gp():
   @task
   def extract_exchange_rates() -> dict[str, float]:
     """
-    Получает актуальные курсы валют с сайта ЦБ РФ на указанную дату.
+    Получает актуальные курсы валют с сайта ЦБ РФ на указанную дату. Если дата - суббота, использует данные с минувшей пятницы.
     Returns:
       Словарь с курсами валют, где ключ - код валюты (например, 'USD'), а значение - курс за рубль.
     Raises:
@@ -61,7 +61,16 @@ def merge_gp():
     """
     
     try:
-      r = requests.get('https://cbr.ru/scripts/xml_daily.asp?date_req=05/12/2021')
+      date = datetime.now()
+      
+      if date.weekday() >= 5:
+        days_to_friday = (date.weekday() - 4) % 7
+        date = date - timedelta(days=days_to_friday)
+        
+      date_str = date.strftime('%d/%m/%Y')
+      
+      r = requests.get(f'https://cbr.ru/scripts/xml_daily.asp?date_req={date_str}')
+      r.raise_for_status()
       root = ET.fromstring(r.text)
 
       valutes: dict[str, float] = dict()
