@@ -148,26 +148,95 @@ def merge_gp():
       cur.execute(dim_query)
       
     def close_old_fact_cars(cur) -> None:
-      close_old_fact_query = f"""
-      UPDATE public."fact_cars"
+      # Создаем временную таблицу с новыми данными
+      temp_table_query = """
+      CREATE TEMP TABLE temp_cars_data AS
+      SELECT 
+          car_sk, 
+          price_foreign, 
+          currency_code_foreign, 
+          price_rub, 
+          ex_rate
+      FROM (VALUES
+      """ + ",\n".join([
+          f"({c['id']}, {c['price']}, '{c['currency']}', {c['rub']}, {c['ex_rate']})" 
+          for _, c in cars.iterrows()
+      ]) + """) AS t(car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate);
+      """
+      
+      # Закрываем записи: 1) где изменились данные, 2) которых нет в новых данных
+      update_query = """
+      -- Закрываем записи с измененными данными
+      UPDATE public."fact_cars" fc
       SET 
-        is_current = false,
-        effective_to = CURRENT_TIMESTAMP
+          is_current = false,
+          effective_to = CURRENT_TIMESTAMP
+      FROM temp_cars_data temp
+      WHERE 
+          fc.car_sk = temp.car_sk
+          AND fc.is_current = true
+          AND (
+              fc.price_foreign != temp.price_foreign
+              OR fc.currency_code_foreign != temp.currency_code_foreign
+              OR fc.price_rub != temp.price_rub
+              OR fc.ex_rate != temp.ex_rate
+          );
+
+      -- Закрываем записи для машин, которых нет в новых данных
+      UPDATE public."fact_cars" fc
+      SET 
+          is_current = false,
+          effective_to = CURRENT_TIMESTAMP
+      WHERE 
+          fc.is_current = true
+          AND NOT EXISTS (
+              SELECT 1 FROM temp_cars_data temp 
+              WHERE temp.car_sk = fc.car_sk
+          );
+
+      DROP TABLE temp_cars_data;
       """
       
       logging.info(f"Fixing cars facts table")
       # logging.info(f"Executing query: {close_old_fact_query}")
-      cur.execute(close_old_fact_query)
+      cur.execute(temp_table_query)
+      cur.execute(update_query)
     
     def add_new_fact_cars(cur) -> None:
-      fact_query = f"""
-      INSERT INTO public."fact_cars" (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename) VALUES
-      {",\n".join([f"('{c['id']}', '{c['price']}', '{c['currency']}', '{c['rub']}', '{c['ex_rate']}', '{c['source_filename']}')" for _, c in cars.iterrows()])}
+      # Вставляем только записи для машин, у которых изменились данные
+      fact_query = """
+      INSERT INTO public."fact_cars" 
+          (car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate, source_filename)
+      SELECT 
+          t.car_sk, 
+          t.price_foreign, 
+          t.currency_code_foreign, 
+          t.price_rub, 
+          t.ex_rate,
+          %s
+      FROM (
+          VALUES
+      """ + ",\n".join([
+          f"({c['id']}, {c['price']}, '{c['currency']}', {c['rub']}, {c['ex_rate']})" 
+          for _, c in cars.iterrows()
+      ]) + """
+      ) AS t(car_sk, price_foreign, currency_code_foreign, price_rub, ex_rate)
+      LEFT JOIN public."fact_cars" fc ON 
+          t.car_sk = fc.car_sk 
+          AND fc.is_current = true
+      WHERE 
+          fc.car_sk IS NULL
+          OR (
+              t.price_foreign != fc.price_foreign
+              OR t.currency_code_foreign != fc.currency_code_foreign
+              OR t.price_rub != fc.price_rub
+              OR t.ex_rate != fc.ex_rate
+          );
       """
       
       logging.info(f"Updating cars facts table")
       # logging.info(f"Executing query: {fact_query}")
-      cur.execute(fact_query)
+      cur.execute(fact_query, (cars["source_filename"][0],))
           
     hook = PostgresHook(postgres_conn_id="gp_conn")
     conn = hook.get_conn()

@@ -12,9 +12,9 @@ import xml.etree.ElementTree as ET
 
 CAR_MIN_PRICE = 10_000
 CAR_MAX_PRICE = 50_000
-CARS_CREATE_PER_UPDATE=0
-CARS_DELETE_PER_UPDATE=0
-CARS_UPDATE_PER_UPDATE=10
+CARS_CREATE_PER_UPDATE=1
+CARS_DELETE_PER_UPDATE=1
+CARS_UPDATE_PER_UPDATE=4
 
 @dag(
     dag_id="update_cars",
@@ -157,6 +157,6 @@ def update_cars():
   update = update_cars()
   load = load_cars(transform)
 
-  [extract, extract_curs] >> transform >> [delete, update, load]
+  [extract, extract_curs] >> transform >> delete >> update >> load
 
 cars_dag = update_cars()
