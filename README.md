@@ -475,11 +475,11 @@ WITH monthly_data AS (
 	JOIN dim_cars dc ON fc.car_sk = dc.car_sk
 )
 SELECT
-    mark,
-    model,
-    year_of_manufacture,
-    month,
-    AVG(price_rub) as avg_price,
+  mark,
+  model,
+  year_of_manufacture,
+  month,
+  AVG(price_rub) as avg_price,
 	MIN(price_rub) as min_price,
 	MAX(price_rub) as max_price,
 	MAX(price_rub) - MIN(price_rub) as price_range
