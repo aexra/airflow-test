@@ -22,16 +22,110 @@
 
 [Итоговый DAG по заданию](./dags/cars_exam/merge_gp.py)
 
+##### Задание 3
+
+> Спроектировать вьюху для аналитического отчета "Динамика цены автомобиля за месяц", с возможностью составить аналитику в разрезе марки или модели или года выпуска. Описать структуру в любой удобной форме.
+
+Создание представления
+
+```sql
+CREATE OR REPLACE VIEW car_price_dynamics AS
+WITH monthly_data AS (
+	SELECT
+		fc.car_sk as car_sk,
+		price_rub,
+		mark,
+		model,
+		year_of_manufacture,
+		DATE_TRUNC('month', effective_from) AS month
+	FROM fact_cars fc
+	JOIN dim_cars dc ON fc.car_sk = dc.car_sk
+)
+SELECT
+    mark,
+    model,
+    year_of_manufacture,
+    month,
+    AVG(price_rub) as avg_price,
+	MIN(price_rub) as min_price,
+	MAX(price_rub) as max_price,
+	MAX(price_rub) - MIN(price_rub) as price_range
+FROM monthly_data as md
+GROUP BY car_sk, mark, model, year_of_manufacture, month
+ORDER BY car_sk;
+```
+
+Использование представления
+
+```sql
+-- Просмотр аналитики цен по месяцам для всех авто
+SELECT * FROM car_price_dynamics
+
+-- В разрезе марки
+SELECT * FROM car_price_dynamics
+WHERE mark = 'Audi'
+
+-- В разрезе модели
+SELECT * FROM car_price_dynamics
+WHERE model = 'A4'
+
+-- В разрезе года выпуска
+SELECT * FROM car_price_dynamics
+WHERE year_of_manufacture = 2022
+
+-- Или всё сразу
+SELECT * FROM car_price_dynamics
+WHERE 
+	mark = 'Audi' 
+	AND model = 'A4'
+	AND year_of_manufacture = 2022
+```
+
+Представление будет содержать данные следующего вида
+
+![](./docs/assets/Снимок%20экрана%202025-05-13%20090744.png)
+
 ## Локальная развертка
 
 Предполагается развертка под [Docker Desktop](https://www.docker.com/)
 
-Запустите приложение
+### Запуск приложения
+
 ```bash
 docker compose --profile flower up --remove-orphans
 ```
 
-Если что-то очень пошло не так:
-```bash
-docker compose --profile flower down --volumes --remove-orphans
-```
+> [!NOTE]
+> Если что-то очень пошло не так, можно всё сбросить и начать сначала
+> ```bash
+> docker compose --profile flower down --volumes --remove-orphans
+> ```
+
+### Начало работы
+
+Зайдите в дэшборд Airflow по адресу `localhost:8080` и войдите с именем и паролем airflow/airflow.
+
+Запустите DAG `refill_cars` для заполнения исходных данных в БД.
+
+![](./docs/assets/Снимок%20экрана%202025-05-13%20091819.png)
+
+Чтобы симулировать случайное изменение цен или добавление/удаление автомобилей используйте DAG `update_cars`.
+
+![](./docs/assets/Снимок%20экрана%202025-05-13%20091944.png)
+
+Чтобы после обновления добавить файл с актуальными машинами в S3, вызовите DAG `s3_save_current`.
+
+![](./docs/assets/Снимок%20экрана%202025-05-13%20092146.png)
+
+Чтобы обновить КХД с новыми записями используйте `merge_cars`
+
+![](./docs/assets/Снимок%20экрана%202025-05-13%20092540.png)
+
+Этот даг является прямой реализацией условия задачи:
+> В бакет на S3 в будние дни по расписанию кладется файл csv с содержимым
+
+Так что помимо ручного применения дагов они рассчитаны на автоматический вызов по соответствующему расписанию:
+
+`update_cars` вызывается по будням в 22:00 для симуляции изменения состояния автопарка
+`s3_save_current` вызывается по будням в 23:00 для доставки файла в S3
+`merge_cars` вызывается с понедельника по субботу в 00:00 для записи в КХД
